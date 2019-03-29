@@ -1,0 +1,867 @@
+diff --git a/ffmpeg/libavutil/atomic_gcc.h b/ffmpeg/libavutil/atomic_gcc.h
+index 5f9fc49..a215867 100644
+--- a/ffmpeg/libavutil/atomic_gcc.h
++++ b/ffmpeg/libavutil/atomic_gcc.h
+@@ -25,6 +25,8 @@
+ 
+ #include "atomic.h"
+ 
++#define __ATOMIC_SEQ_CST 5
++
+ #define avpriv_atomic_int_get atomic_int_get_gcc
+ static inline int atomic_int_get_gcc(volatile int *ptr)
+ {
+@@ -67,7 +69,7 @@ static inline void *atomic_ptr_cas_gcc(void * volatile *ptr,
+     volatile uintptr_t *tmp = (volatile uintptr_t*)ptr;
+     return (void*)__sync_val_compare_and_swap(tmp, oldval, newval);
+ #else
+-    return __sync_val_compare_and_swap(ptr, oldval, newval);
++    return (void*)__sync_val_compare_and_swap(ptr, oldval, newval);
+ #endif
+ #else
+     __atomic_compare_exchange_n(ptr, &oldval, newval, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+diff --git a/ffmpeg/libavutil/avutil.h b/ffmpeg/libavutil/avutil.h
+index 9bcf674..a934774 100644
+--- a/ffmpeg/libavutil/avutil.h
++++ b/ffmpeg/libavutil/avutil.h
+@@ -328,7 +328,7 @@ unsigned av_int_list_length_for_size(unsigned elsize,
+  * The API of this function matches POSIX fopen(), errors are returned through
+  * errno.
+  */
+-FILE *av_fopen_utf8(const char *path, const char *mode);
++//FILE *av_fopen_utf8(const char *path, const char *mode);
+ 
+ /**
+  * Return the fractional representation of the internal time base.
+diff --git a/ffmpeg/libavutil/bprint.c b/ffmpeg/libavutil/bprint.c
+index 0a0d078..61418b2 100644
+--- a/ffmpeg/libavutil/bprint.c
++++ b/ffmpeg/libavutil/bprint.c
+@@ -29,7 +29,8 @@
+ #include "compat/va_copy.h"
+ #include "error.h"
+ #include "mem.h"
+-
++#define ENOMEM 12
++#define EIO 5
+ #define av_bprint_room(buf) ((buf)->size - FFMIN((buf)->len, (buf)->size))
+ #define av_bprint_is_allocated(buf) ((buf)->str != (buf)->reserved_internal_buffer)
+ 
+diff --git a/ffmpeg/libavutil/buffer.c b/ffmpeg/libavutil/buffer.c
+index bb112c2..50443c8 100644
+--- a/ffmpeg/libavutil/buffer.c
++++ b/ffmpeg/libavutil/buffer.c
+@@ -24,7 +24,8 @@
+ #include "common.h"
+ #include "mem.h"
+ #include "thread.h"
+-
++//#include "internal.h"
++#define ENOMEM 12
+ AVBufferRef *av_buffer_create(uint8_t *data, int size,
+                               void (*free)(void *opaque, uint8_t *data),
+                               void *opaque, int flags)
+@@ -268,7 +269,7 @@ static BufferPoolEntry *get_pool(AVBufferPool *pool)
+ 
+     while (cur != last) {
+         last = cur;
+-        cur = avpriv_atomic_ptr_cas((void * volatile *)&pool->pool, last, NULL);
++        cur = (BufferPoolEntry *)avpriv_atomic_ptr_cas((void * volatile *)&pool->pool, last, NULL);
+         if (!cur)
+             return NULL;
+     }
+@@ -298,6 +299,7 @@ static void add_to_pool(BufferPoolEntry *buf)
+ }
+ #endif
+ 
++#define FF_MEMORY_POISON 0x2a
+ static void pool_release_buffer(void *opaque, uint8_t *data)
+ {
+     BufferPoolEntry *buf = opaque;
+diff --git a/ffmpeg/libavutil/error.c b/ffmpeg/libavutil/error.c
+index 8df73db..6cc44c5 100644
+--- a/ffmpeg/libavutil/error.c
++++ b/ffmpeg/libavutil/error.c
+@@ -60,7 +60,7 @@ static const struct error_entry error_entries[] = {
+     { ERROR_TAG(HTTP_NOT_FOUND),     "Server returned 404 Not Found"           },
+     { ERROR_TAG(HTTP_OTHER_4XX),     "Server returned 4XX Client Error, but not one of 40{0,1,3,4}" },
+     { ERROR_TAG(HTTP_SERVER_ERROR),  "Server returned 5XX Server Error reply" },
+-#if !HAVE_STRERROR_R
++#if 0
+     { EERROR_TAG(E2BIG),             "Argument list too long" },
+     { EERROR_TAG(EACCES),            "Permission denied" },
+     { EERROR_TAG(EAGAIN),            "Resource temporarily unavailable" },
+diff --git a/ffmpeg/libavutil/file_open.c b/ffmpeg/libavutil/file_open.c
+index 9e76127..41ce5f4 100644
+--- a/ffmpeg/libavutil/file_open.c
++++ b/ffmpeg/libavutil/file_open.c
+@@ -19,9 +19,8 @@
+ #include "config.h"
+ #include "internal.h"
+ #include "mem.h"
+-#include <stdarg.h>
+-#include <fcntl.h>
+-#include <sys/stat.h>
++//#include <fcntl.h>
++//#include <sys/stat.h>
+ #if HAVE_UNISTD_H
+ #include <unistd.h>
+ #endif
+@@ -65,34 +64,10 @@ fallback:
+ 
+ int avpriv_open(const char *filename, int flags, ...)
+ {
+-    int fd;
+-    unsigned int mode = 0;
+-    va_list ap;
+-
+-    va_start(ap, flags);
+-    if (flags & O_CREAT)
+-        mode = va_arg(ap, unsigned int);
+-    va_end(ap);
+-
+-#ifdef O_CLOEXEC
+-    flags |= O_CLOEXEC;
+-#endif
+-#ifdef O_NOINHERIT
+-    flags |= O_NOINHERIT;
+-#endif
+-
+-    fd = open(filename, flags, mode);
+-#if HAVE_FCNTL
+-    if (fd != -1) {
+-        if (fcntl(fd, F_SETFD, FD_CLOEXEC) == -1)
+-            av_log(NULL, AV_LOG_DEBUG, "Failed to set close on exec\n");
+-    }
+-#endif
+-
+-    return fd;
++  ;
+ }
+ 
+-FILE *av_fopen_utf8(const char *path, const char *mode)
++/*FILE *av_fopen_utf8(const char *path, const char *mode)
+ {
+     int fd;
+     int access;
+@@ -124,4 +99,4 @@ FILE *av_fopen_utf8(const char *path, const char *mode)
+     if (fd == -1)
+         return NULL;
+     return fdopen(fd, mode);
+-}
++}*/
+diff --git a/ffmpeg/libavutil/frame.c b/ffmpeg/libavutil/frame.c
+index 033f013..cac5957 100644
+--- a/ffmpeg/libavutil/frame.c
++++ b/ffmpeg/libavutil/frame.c
+@@ -26,7 +26,7 @@
+ #include "imgutils.h"
+ #include "mem.h"
+ #include "samplefmt.h"
+-
++#include "internal.h"
+ MAKE_ACCESSORS(AVFrame, frame, int64_t, best_effort_timestamp)
+ MAKE_ACCESSORS(AVFrame, frame, int64_t, pkt_duration)
+ MAKE_ACCESSORS(AVFrame, frame, int64_t, pkt_pos)
+diff --git a/ffmpeg/libavutil/log.c b/ffmpeg/libavutil/log.c
+index 4583519..501fbd4 100644
+--- a/ffmpeg/libavutil/log.c
++++ b/ffmpeg/libavutil/log.c
+@@ -167,25 +167,25 @@ static void colored_fputs(int level, int tint, const char *str)
+         SetConsoleTextAttribute(con, attr_orig);
+ #else
+     if (local_use_color == 1) {
+-        fprintf(stderr,
++       /* fprintf(stderr,
+                 "\033[%d;3%dm%s\033[0m",
+                 (color[level] >> 4) & 15,
+                 color[level] & 15,
+-                str);
++                str);*/
+     } else if (tint && use_color == 256) {
+-        fprintf(stderr,
++      /*  fprintf(stderr,
+                 "\033[48;5;%dm\033[38;5;%dm%s\033[0m",
+                 (color[level] >> 16) & 0xff,
+                 tint,
+-                str);
++                str);*/
+     } else if (local_use_color == 256) {
+-        fprintf(stderr,
++       /* fprintf(stderr,
+                 "\033[48;5;%dm\033[38;5;%dm%s\033[0m",
+                 (color[level] >> 16) & 0xff,
+                 (color[level] >> 8) & 0xff,
+-                str);
+-    } else
+-        fputs(str, stderr);
++                str);*/
++    } //else
++       // fputs(str, stderr);
+ #endif
+ 
+ }
+@@ -283,11 +283,20 @@ static void format_line(void *avcl, int level, const char *fmt, va_list vl,
+ 
+ void av_log_format_line(void *ptr, int level, const char *fmt, va_list vl,
+                         char *line, int line_size, int *print_prefix)
++{
++    av_log_format_line2(ptr, level, fmt, vl, line, line_size, print_prefix);
++}
++
++int av_log_format_line2(void *ptr, int level, const char *fmt, va_list vl,
++                        char *line, int line_size, int *print_prefix)
+ {
+     AVBPrint part[4];
++    int ret;
++
+     format_line(ptr, level, fmt, vl, part, print_prefix, NULL);
+-    snprintf(line, line_size, "%s%s%s%s", part[0].str, part[1].str, part[2].str, part[3].str);
++    ret = snprintf(line, line_size, "%s%s%s%s", part[0].str, part[1].str, part[2].str, part[3].str);
+     av_bprint_finalize(part+3, NULL);
++    return ret;
+ }
+ 
+ void av_log_default_callback(void* ptr, int level, const char* fmt, va_list vl)
+@@ -323,12 +332,12 @@ void av_log_default_callback(void* ptr, int level, const char* fmt, va_list vl)
+     if (print_prefix && (flags & AV_LOG_SKIP_REPEATED) && !strcmp(line, prev) &&
+         *line && line[strlen(line) - 1] != '\r'){
+         count++;
+-        if (is_atty == 1)
+-            fprintf(stderr, "    Last message repeated %d times\r", count);
++       // if (is_atty == 1)
++         //   fprintf(stderr, "    Last message repeated %d times\r", count);
+         goto end;
+     }
+     if (count > 0) {
+-        fprintf(stderr, "    Last message repeated %d times\n", count);
++      //  fprintf(stderr, "    Last message repeated %d times\n", count);
+         count = 0;
+     }
+     strcpy(prev, line);
+@@ -430,26 +439,3 @@ void avpriv_report_missing_feature(void *avc, const char *msg, ...)
+     missing_feature_sample(0, avc, msg, argument_list);
+     va_end(argument_list);
+ }
+-
+-#ifdef TEST
+-// LCOV_EXCL_START
+-#include <string.h>
+-
+-int main(int argc, char **argv)
+-{
+-    int i;
+-    av_log_set_level(AV_LOG_DEBUG);
+-    for (use_color=0; use_color<=256; use_color = 255*use_color+1) {
+-        av_log(NULL, AV_LOG_FATAL, "use_color: %d\n", use_color);
+-        for (i = AV_LOG_DEBUG; i>=AV_LOG_QUIET; i-=8) {
+-            av_log(NULL, i, " %d", i);
+-            av_log(NULL, AV_LOG_INFO, "e ");
+-            av_log(NULL, i + 256*123, "C%d", i);
+-            av_log(NULL, AV_LOG_INFO, "e");
+-        }
+-        av_log(NULL, AV_LOG_PANIC, "\n");
+-    }
+-    return 0;
+-}
+-// LCOV_EXCL_STOP
+-#endif
+diff --git a/ffmpeg/libavutil/log.h b/ffmpeg/libavutil/log.h
+index 321748c..0acc1b9 100644
+--- a/ffmpeg/libavutil/log.h
++++ b/ffmpeg/libavutil/log.h
+@@ -317,6 +317,23 @@ AVClassCategory av_default_get_category(void *ptr);
+ void av_log_format_line(void *ptr, int level, const char *fmt, va_list vl,
+                         char *line, int line_size, int *print_prefix);
+ 
++/**
++ * Format a line of log the same way as the default callback.
++ * @param line          buffer to receive the formatted line;
++ *                      may be NULL if line_size is 0
++ * @param line_size     size of the buffer; at most line_size-1 characters will
++ *                      be written to the buffer, plus one null terminator
++ * @param print_prefix  used to store whether the prefix must be printed;
++ *                      must point to a persistent integer initially set to 1
++ * @return Returns a negative value if an error occurred, otherwise returns
++ *         the number of characters that would have been written for a
++ *         sufficiently large buffer, not including the terminating null
++ *         character. If the return value is not less than line_size, it means
++ *         that the log message was truncated to fit the buffer.
++ */
++int av_log_format_line2(void *ptr, int level, const char *fmt, va_list vl,
++                        char *line, int line_size, int *print_prefix);
++
+ #if FF_API_DLOG
+ /**
+  * av_dlog macros
+diff --git a/ffmpeg/libavutil/mem.c b/ffmpeg/libavutil/mem.c
+index 8dfaad8..860e431 100644
+--- a/ffmpeg/libavutil/mem.c
++++ b/ffmpeg/libavutil/mem.c
+@@ -33,16 +33,16 @@
+ #include <stdlib.h>
+ #include <string.h>
+ #if HAVE_MALLOC_H
+-#include <malloc.h>
++//#include <malloc.h>
+ #endif
+-
++#include "internal.h"
+ #include "avassert.h"
+ #include "avutil.h"
+ #include "common.h"
+ #include "dynarray.h"
+ #include "intreadwrite.h"
+ #include "mem.h"
+-
++#define ENOMEM 12
+ #ifdef MALLOC_PREFIX
+ 
+ #define malloc         AV_JOIN(MALLOC_PREFIX, malloc)
+diff --git a/ffmpeg/libavutil/mem.h b/ffmpeg/libavutil/mem.h
+index d25b322..4c8d8e7 100644
+--- a/ffmpeg/libavutil/mem.h
++++ b/ffmpeg/libavutil/mem.h
+@@ -32,7 +32,8 @@
+ #include "attributes.h"
+ #include "error.h"
+ #include "avutil.h"
+-
++#define EINVAL 22
++#define ENOMEM 12
+ /**
+  * @addtogroup lavu_mem
+  * @{
+diff --git a/ffmpeg/libavutil/opt.c b/ffmpeg/libavutil/opt.c
+index eae4f75..b15b19e 100644
+--- a/ffmpeg/libavutil/opt.c
++++ b/ffmpeg/libavutil/opt.c
+@@ -41,7 +41,11 @@
+ #include "bprint.h"
+ 
+ #include <float.h>
+-
++#define EINVAL 22
++#define ENOMEM 12
++#define EAGAIN 11
++#define ENOSYS 38
++#define ENOENT 2
+ const AVOption *av_opt_next(const void *obj, const AVOption *last)
+ {
+     const AVClass *class;
+diff --git a/ffmpeg/libavutil/parseutils.c b/ffmpeg/libavutil/parseutils.c
+index 0097bec..d506692 100644
+--- a/ffmpeg/libavutil/parseutils.c
++++ b/ffmpeg/libavutil/parseutils.c
+@@ -33,6 +33,7 @@
+ #include "parseutils.h"
+ #include "time.h"
+ 
++#define EINVAL 22
+ #ifdef TEST
+ 
+ #define av_get_random_seed av_get_random_seed_deterministic
+@@ -465,7 +466,7 @@ static int date_get_num(const char **pp,
+     *pp = p;
+     return val;
+ }
+-
++/*
+ char *av_small_strptime(const char *p, const char *fmt, struct tm *dt)
+ {
+     int c, val;
+@@ -488,37 +489,37 @@ char *av_small_strptime(const char *p, const char *fmt, struct tm *dt)
+ 
+             if (val == -1)
+                 return NULL;
+-            dt->tm_hour = val;
++            //dt->tm_hour = val;
+             break;
+         case 'M':
+             val = date_get_num(&p, 0, 59, 2);
+             if (val == -1)
+                 return NULL;
+-            dt->tm_min = val;
++            //dt->tm_min = val;
+             break;
+         case 'S':
+             val = date_get_num(&p, 0, 59, 2);
+             if (val == -1)
+                 return NULL;
+-            dt->tm_sec = val;
++           // dt->tm_sec = val;
+             break;
+         case 'Y':
+             val = date_get_num(&p, 0, 9999, 4);
+             if (val == -1)
+                 return NULL;
+-            dt->tm_year = val - 1900;
++           // dt->tm_year = val - 1900;
+             break;
+         case 'm':
+             val = date_get_num(&p, 1, 12, 2);
+             if (val == -1)
+                 return NULL;
+-            dt->tm_mon = val - 1;
++           // dt->tm_mon = val - 1;
+             break;
+         case 'd':
+             val = date_get_num(&p, 1, 31, 2);
+             if (val == -1)
+                 return NULL;
+-            dt->tm_mday = val;
++           // dt->tm_mday = val;
+             break;
+         case 'T':
+             p = av_small_strptime(p, "%H:%M:%S", dt);
+@@ -536,7 +537,8 @@ char *av_small_strptime(const char *p, const char *fmt, struct tm *dt)
+ 
+     return (char*)p;
+ }
+-
++*/
++/*
+ time_t av_timegm(struct tm *tm)
+ {
+     time_t t;
+@@ -555,13 +557,13 @@ time_t av_timegm(struct tm *tm)
+ 
+     return t;
+ }
+-
++*/
+ int av_parse_time(int64_t *timeval, const char *timestr, int duration)
+ {
+     const char *p, *q;
+     int64_t t, now64;
+-    time_t now;
+-    struct tm dt = { 0 }, tmbuf;
++   // time_t now;
++   // struct tm dt = { 0 }, tmbuf;
+     int today = 0, negative = 0, microseconds = 0;
+     int i;
+     static const char * const date_fmt[] = {
+@@ -583,7 +585,7 @@ int av_parse_time(int64_t *timeval, const char *timestr, int duration)
+     *timeval = INT64_MIN;
+     if (!duration) {
+         now64 = av_gettime();
+-        now = now64 / 1000000;
++        //now = now64 / 1000000;
+ 
+         if (!av_strcasecmp(timestr, "now")) {
+             *timeval = now64;
+@@ -592,7 +594,7 @@ int av_parse_time(int64_t *timeval, const char *timestr, int duration)
+ 
+         /* parse the year-month-day part */
+         for (i = 0; i < FF_ARRAY_ELEMS(date_fmt); i++) {
+-            q = av_small_strptime(p, date_fmt[i], &dt);
++          //  q = av_small_strptime(p, date_fmt[i], &dt);
+             if (q)
+                 break;
+         }
+@@ -613,7 +615,7 @@ int av_parse_time(int64_t *timeval, const char *timestr, int duration)
+ 
+         /* parse the hour-minute-second part */
+         for (i = 0; i < FF_ARRAY_ELEMS(time_fmt); i++) {
+-            q = av_small_strptime(p, time_fmt[i], &dt);
++           // q = av_small_strptime(p, time_fmt[i], &dt);
+             if (q)
+                 break;
+         }
+@@ -624,20 +626,20 @@ int av_parse_time(int64_t *timeval, const char *timestr, int duration)
+             ++p;
+         }
+         /* parse timestr as HH:MM:SS */
+-        q = av_small_strptime(p, "%J:%M:%S", &dt);
++        //q = av_small_strptime(p, "%J:%M:%S", &dt);
+         if (!q) {
+             /* parse timestr as MM:SS */
+-            q = av_small_strptime(p, "%M:%S", &dt);
+-            dt.tm_hour = 0;
++          //  q = av_small_strptime(p, "%M:%S", &dt);
++           // dt.tm_hour = 0;
+         }
+         if (!q) {
+             char *o;
+             /* parse timestr as S+ */
+-            dt.tm_sec = strtol(p, &o, 10);
++            //dt.tm_sec = strtol(p, &o, 10);
+             if (o == p) /* the parsing didn't succeed */
+                 return AVERROR(EINVAL);
+-            dt.tm_min = 0;
+-            dt.tm_hour = 0;
++          //  dt.tm_min = 0;
++          //  dt.tm_hour = 0;
+             q = o;
+         }
+     }
+@@ -660,44 +662,45 @@ int av_parse_time(int64_t *timeval, const char *timestr, int duration)
+     }
+ 
+     if (duration) {
+-        t = dt.tm_hour * 3600 + dt.tm_min * 60 + dt.tm_sec;
++       // t = dt.tm_hour * 3600 + dt.tm_min * 60 + dt.tm_sec;
+     } else {
+         int is_utc = *q == 'Z' || *q == 'z';
+         int tzoffset = 0;
+         q += is_utc;
+         if (!today && !is_utc && (*q == '+' || *q == '-')) {
+-            struct tm tz = { 0 };
++    //        struct tm tz = { 0 };
+             int sign = (*q == '+' ? -1 : 1);
+             q++;
+             p = q;
+             for (i = 0; i < FF_ARRAY_ELEMS(tz_fmt); i++) {
+-                q = av_small_strptime(p, tz_fmt[i], &tz);
++              //  q = av_small_strptime(p, tz_fmt[i], &tz);
+                 if (q)
+                     break;
+             }
+             if (!q)
+                 return AVERROR(EINVAL);
+-            tzoffset = sign * (tz.tm_hour * 60 + tz.tm_min) * 60;
++          //  tzoffset = sign * (tz.tm_hour * 60 + tz.tm_min) * 60;
+             is_utc = 1;
+         }
+         if (today) { /* fill in today's date */
+-            struct tm dt2 = is_utc ? *gmtime_r(&now, &tmbuf) : *localtime_r(&now, &tmbuf);
+-            dt2.tm_hour = dt.tm_hour;
+-            dt2.tm_min  = dt.tm_min;
+-            dt2.tm_sec  = dt.tm_sec;
+-            dt = dt2;
++        //	struct tm *tmptm = is_utc ? (struct tm *)gmtime_r(&now, &tmbuf): (struct tm *)(localtime_r(&now, &tmbuf));
++          //  struct tm dt2 = *tmptm;
++         //   dt2.tm_hour = dt.tm_hour;
++          //  dt2.tm_min  = dt.tm_min;
++          //  dt2.tm_sec  = dt.tm_sec;
++          //  dt = dt2;
+         }
+-        t = is_utc ? av_timegm(&dt) : mktime(&dt);
+-        t += tzoffset;
++       // t = is_utc ? av_timegm(&dt) : mktime(&dt);
++       // t += tzoffset;
+     }
+ 
+     /* Check that we are at the end of the string */
+     if (*q)
+         return AVERROR(EINVAL);
+ 
+-    t *= 1000000;
+-    t += microseconds;
+-    *timeval = negative ? -t : t;
++   // t *= 1000000;
++   // t += microseconds;
++  //  *timeval = negative ? -t : t;
+     return 0;
+ }
+ 
+@@ -739,192 +742,3 @@ int av_find_info_tag(char *arg, int arg_size, const char *tag1, const char *info
+     }
+     return 0;
+ }
+-
+-#ifdef TEST
+-
+-static uint32_t randomv = MKTAG('L','A','V','U');
+-
+-static uint32_t av_get_random_seed_deterministic(void)
+-{
+-    return randomv = randomv * 1664525 + 1013904223;
+-}
+-
+-int main(void)
+-{
+-    printf("Testing av_parse_video_rate()\n");
+-    {
+-        int i;
+-        static const char *const rates[] = {
+-            "-inf",
+-            "inf",
+-            "nan",
+-            "123/0",
+-            "-123 / 0",
+-            "",
+-            "/",
+-            " 123  /  321",
+-            "foo/foo",
+-            "foo/1",
+-            "1/foo",
+-            "0/0",
+-            "/0",
+-            "1/",
+-            "1",
+-            "0",
+-            "-123/123",
+-            "-foo",
+-            "123.23",
+-            ".23",
+-            "-.23",
+-            "-0.234",
+-            "-0.0000001",
+-            "  21332.2324   ",
+-            " -21332.2324   ",
+-        };
+-
+-        for (i = 0; i < FF_ARRAY_ELEMS(rates); i++) {
+-            int ret;
+-            AVRational q = { 0, 0 };
+-            ret = av_parse_video_rate(&q, rates[i]);
+-            printf("'%s' -> %d/%d %s\n",
+-                   rates[i], q.num, q.den, ret ? "ERROR" : "OK");
+-        }
+-    }
+-
+-    printf("\nTesting av_parse_color()\n");
+-    {
+-        int i;
+-        uint8_t rgba[4];
+-        static const char *const color_names[] = {
+-            "bikeshed",
+-            "RaNdOm",
+-            "foo",
+-            "red",
+-            "Red ",
+-            "RED",
+-            "Violet",
+-            "Yellow",
+-            "Red",
+-            "0x000000",
+-            "0x0000000",
+-            "0xff000000",
+-            "0x3e34ff",
+-            "0x3e34ffaa",
+-            "0xffXXee",
+-            "0xfoobar",
+-            "0xffffeeeeeeee",
+-            "#ff0000",
+-            "#ffXX00",
+-            "ff0000",
+-            "ffXX00",
+-            "red@foo",
+-            "random@10",
+-            "0xff0000@1.0",
+-            "red@",
+-            "red@0xfff",
+-            "red@0xf",
+-            "red@2",
+-            "red@0.1",
+-            "red@-1",
+-            "red@0.5",
+-            "red@1.0",
+-            "red@256",
+-            "red@10foo",
+-            "red@-1.0",
+-            "red@-0.0",
+-        };
+-
+-        av_log_set_level(AV_LOG_DEBUG);
+-
+-        for (i = 0;  i < FF_ARRAY_ELEMS(color_names); i++) {
+-            if (av_parse_color(rgba, color_names[i], -1, NULL) >= 0)
+-                printf("%s -> R(%d) G(%d) B(%d) A(%d)\n",
+-                       color_names[i], rgba[0], rgba[1], rgba[2], rgba[3]);
+-            else
+-                printf("%s -> error\n", color_names[i]);
+-        }
+-    }
+-
+-    printf("\nTesting av_small_strptime()\n");
+-    {
+-        int i;
+-        struct tm tm = { 0 };
+-        struct fmt_timespec_entry {
+-            const char *fmt, *timespec;
+-        } fmt_timespec_entries[] = {
+-            { "%Y-%m-%d",                    "2012-12-21" },
+-            { "%Y - %m - %d",                "2012-12-21" },
+-            { "%Y-%m-%d %H:%M:%S",           "2012-12-21 20:12:21" },
+-            { "  %Y - %m - %d %H : %M : %S", "   2012 - 12 -  21   20 : 12 : 21" },
+-        };
+-
+-        av_log_set_level(AV_LOG_DEBUG);
+-        for (i = 0;  i < FF_ARRAY_ELEMS(fmt_timespec_entries); i++) {
+-            char *p;
+-            struct fmt_timespec_entry *e = &fmt_timespec_entries[i];
+-            printf("fmt:'%s' spec:'%s' -> ", e->fmt, e->timespec);
+-            p = av_small_strptime(e->timespec, e->fmt, &tm);
+-            if (p) {
+-                printf("%04d-%02d-%2d %02d:%02d:%02d\n",
+-                       1900+tm.tm_year, tm.tm_mon+1, tm.tm_mday,
+-                       tm.tm_hour, tm.tm_min, tm.tm_sec);
+-            } else {
+-                printf("error\n");
+-            }
+-        }
+-    }
+-
+-    printf("\nTesting av_parse_time()\n");
+-    {
+-        int i;
+-        int64_t tv;
+-        time_t tvi;
+-        struct tm *tm;
+-        static char tzstr[] = "TZ=CET-1";
+-        static const char * const time_string[] = {
+-            "now",
+-            "12:35:46",
+-            "2000-12-20 0:02:47.5z",
+-            "2012 - 02-22  17:44:07",
+-            "2000-12-20T010247.6",
+-            "2000-12-12 1:35:46+05:30",
+-            "2002-12-12 22:30:40-02",
+-        };
+-        static const char * const duration_string[] = {
+-            "2:34:56.79",
+-            "-1:23:45.67",
+-            "42.1729",
+-            "-1729.42",
+-            "12:34",
+-        };
+-
+-        av_log_set_level(AV_LOG_DEBUG);
+-        putenv(tzstr);
+-        printf("(now is 2012-03-17 09:14:13.2 +0100, local time is UTC+1)\n");
+-        for (i = 0;  i < FF_ARRAY_ELEMS(time_string); i++) {
+-            printf("%-24s -> ", time_string[i]);
+-            if (av_parse_time(&tv, time_string[i], 0)) {
+-                printf("error\n");
+-            } else {
+-                tvi = tv / 1000000;
+-                tm = gmtime(&tvi);
+-                printf("%14"PRIi64".%06d = %04d-%02d-%02dT%02d:%02d:%02dZ\n",
+-                       tv / 1000000, (int)(tv % 1000000),
+-                       tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
+-                       tm->tm_hour, tm->tm_min, tm->tm_sec);
+-            }
+-        }
+-        for (i = 0;  i < FF_ARRAY_ELEMS(duration_string); i++) {
+-            printf("%-24s -> ", duration_string[i]);
+-            if (av_parse_time(&tv, duration_string[i], 1)) {
+-                printf("error\n");
+-            } else {
+-                printf("%+21"PRIi64"\n", tv);
+-            }
+-        }
+-    }
+-
+-    return 0;
+-}
+-
+-#endif /* TEST */
+diff --git a/ffmpeg/libavutil/parseutils.h b/ffmpeg/libavutil/parseutils.h
+index e66d24b..bdc7a6a 100644
+--- a/ffmpeg/libavutil/parseutils.h
++++ b/ffmpeg/libavutil/parseutils.h
+@@ -188,6 +188,6 @@ char *av_small_strptime(const char *p, const char *fmt, struct tm *dt);
+ /**
+  * Convert the decomposed UTC time in tm to a time_t value.
+  */
+-time_t av_timegm(struct tm *tm);
++//time_t av_timegm(struct tm *tm);
+ 
+ #endif /* AVUTIL_PARSEUTILS_H */
+diff --git a/ffmpeg/libavutil/pixdesc.c b/ffmpeg/libavutil/pixdesc.c
+index dd7de7e..e0eefa7 100644
+--- a/ffmpeg/libavutil/pixdesc.c
++++ b/ffmpeg/libavutil/pixdesc.c
+@@ -30,7 +30,11 @@
+ #include "internal.h"
+ #include "intreadwrite.h"
+ #include "version.h"
+-
++#define EINVAL 22
++#define ENOMEM 12
++#define EAGAIN 11
++#define ENOSYS 38
++#define ENOENT 2
+ void av_read_image_line(uint16_t *dst,
+                         const uint8_t *data[4], const int linesize[4],
+                         const AVPixFmtDescriptor *desc,
+diff --git a/ffmpeg/libavutil/random_seed.c b/ffmpeg/libavutil/random_seed.c
+index 69bf434..d1bcb9e 100644
+--- a/ffmpeg/libavutil/random_seed.c
++++ b/ffmpeg/libavutil/random_seed.c
+@@ -21,7 +21,7 @@
+ #include "config.h"
+ 
+ #if HAVE_UNISTD_H
+-#include <unistd.h>
++//#include <unistd.h>
+ #endif
+ #if HAVE_IO_H
+ #include <io.h>
+@@ -30,7 +30,7 @@
+ #include <windows.h>
+ #include <wincrypt.h>
+ #endif
+-#include <fcntl.h>
++//#include <fcntl.h>
+ #include <math.h>
+ #include <time.h>
+ #include <string.h>
+@@ -66,8 +66,8 @@ static uint32_t get_generic_seed(void)
+ {
+     uint8_t tmp[120];
+     struct AVSHA *sha = (void*)tmp;
+-    clock_t last_t  = 0;
+-    clock_t last_td = 0;
++    //clock_t last_t  = 0;
++  //  clock_t last_td = 0;
+     static uint64_t i = 0;
+     static uint32_t buffer[512] = { 0 };
+     unsigned char digest[20];
+@@ -85,7 +85,7 @@ static uint32_t get_generic_seed(void)
+ #endif
+     }
+ 
+-    for (;;) {
++   /* for (;;) {
+         clock_t t = clock();
+         if (last_t + 2*last_td + (CLOCKS_PER_SEC > 1000) >= t) {
+             last_td = t - last_t;
+@@ -97,7 +97,7 @@ static uint32_t get_generic_seed(void)
+                 break;
+         }
+         last_t = t;
+-    }
++    }*/
+ 
+     if(TEST) {
+         buffer[0] = buffer[1] = 0;
+diff --git a/ffmpeg/libavutil/thread.h b/ffmpeg/libavutil/thread.h
+index 32ddf40..7c700cd 100644
+--- a/ffmpeg/libavutil/thread.h
++++ b/ffmpeg/libavutil/thread.h
+@@ -146,7 +146,7 @@ static inline int strict_pthread_once(pthread_once_t *once_control, void (*init_
+ 
+ #else
+ 
+-#define USE_ATOMICS 1
++#define USE_ATOMICS 0
+ 
+ #define AVMutex char
+ 
+diff --git a/ffmpeg/libavutil/time.c b/ffmpeg/libavutil/time.c
+index dbaee02..e353837 100644
+--- a/ffmpeg/libavutil/time.c
++++ b/ffmpeg/libavutil/time.c
+@@ -24,7 +24,7 @@
+ #include <stdint.h>
+ #include <time.h>
+ #if HAVE_GETTIMEOFDAY
+-#include <sys/time.h>
++//#include <sys/time.h>
+ #endif
+ #if HAVE_UNISTD_H
+ #include <unistd.h>
+@@ -76,8 +76,8 @@ int av_gettime_relative_is_monotonic(void)
+ int av_usleep(unsigned usec)
+ {
+ #if HAVE_NANOSLEEP
+-    struct timespec ts = { usec / 1000000, usec % 1000000 * 1000 };
+-    while (nanosleep(&ts, &ts) < 0 && errno == EINTR);
++   // struct timespec ts = { usec / 1000000, usec % 1000000 * 1000 };
++   // while (nanosleep(&ts, &ts) < 0 && errno == EINTR);
+     return 0;
+ #elif HAVE_USLEEP
+     return usleep(usec);

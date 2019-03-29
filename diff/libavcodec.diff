@@ -1,0 +1,269 @@
+diff --git a/ffmpeg/compat/va_copy.h b/ffmpeg/compat/va_copy.h
+index a40bbe6..e69de29 100644
+--- a/ffmpeg/compat/va_copy.h
++++ b/ffmpeg/compat/va_copy.h
+@@ -1,34 +0,0 @@
+-/*
+- * MSVC Compatible va_copy macro
+- * Copyright (c) 2012 Derek Buitenhuis
+- *
+- * This file is part of FFmpeg.
+- *
+- * FFmpeg is free software; you can redistribute it and/or
+- * modify it under the terms of the GNU Lesser General Public
+- * License as published by the Free Software Foundation; either
+- * version 2.1 of the License, or (at your option) any later version.
+- *
+- * FFmpeg is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+- * Lesser General Public License for more details.
+- *
+- * You should have received a copy of the GNU Lesser General Public
+- * License along with FFmpeg; if not, write to the Free Software
+- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+- */
+-
+-#ifndef COMPAT_VA_COPY_H
+-#define COMPAT_VA_COPY_H
+-
+-#include <stdarg.h>
+-
+-#if !defined(va_copy) && defined(_MSC_VER)
+-#define va_copy(dst, src) ((dst) = (src))
+-#endif
+-#if !defined(va_copy) && defined(__GNUC__) && __GNUC__ < 3
+-#define va_copy(dst, src) __va_copy(dst, src)
+-#endif
+-
+-#endif /* COMPAT_VA_COPY_H */
+diff --git a/ffmpeg/libavcodec/avpacket.c b/ffmpeg/libavcodec/avpacket.c
+index 5e2e969..2d2cc3f 100644
+--- a/ffmpeg/libavcodec/avpacket.c
++++ b/ffmpeg/libavcodec/avpacket.c
+@@ -29,7 +29,11 @@
+ #include "avcodec.h"
+ #include "bytestream.h"
+ #include "internal.h"
+-
++#define EINVAL 22
++#define ENOMEM 12
++#define EAGAIN 11
++#define ENOSYS 38
++#define ENOENT 2
+ void av_init_packet(AVPacket *pkt)
+ {
+     pkt->pts                  = AV_NOPTS_VALUE;
+diff --git a/ffmpeg/libavcodec/bitstream.c b/ffmpeg/libavcodec/bitstream.c
+index 1acb7a3..4c2ead3 100644
+--- a/ffmpeg/libavcodec/bitstream.c
++++ b/ffmpeg/libavcodec/bitstream.c
+@@ -36,7 +36,7 @@
+ #include "mathops.h"
+ #include "get_bits.h"
+ #include "put_bits.h"
+-
++#include "libavutil/internal.h"
+ const uint8_t ff_log2_run[41]={
+  0, 0, 0, 0, 1, 1, 1, 1,
+  2, 2, 2, 2, 3, 3, 3, 3,
+diff --git a/ffmpeg/libavcodec/h264.c b/ffmpeg/libavcodec/h264.c
+index 550a7fc..67d9db0 100644
+--- a/ffmpeg/libavcodec/h264.c
++++ b/ffmpeg/libavcodec/h264.c
+@@ -33,6 +33,7 @@
+ #include "libavutil/opt.h"
+ #include "libavutil/stereo3d.h"
+ #include "libavutil/timer.h"
++#include "libavutil/internal.h"
+ #include "internal.h"
+ #include "cabac.h"
+ #include "cabac_functions.h"
+diff --git a/ffmpeg/libavcodec/h264.h b/ffmpeg/libavcodec/h264.h
+index cfd14aa..b93e536 100644
+--- a/ffmpeg/libavcodec/h264.h
++++ b/ffmpeg/libavcodec/h264.h
+@@ -43,7 +43,11 @@
+ #include "qpeldsp.h"
+ #include "rectangle.h"
+ #include "videodsp.h"
+-
++#define EINVAL 22
++#define ENOMEM 12
++#define EAGAIN 11
++#define ENOSYS 38
++#define ENOENT 2
+ #define H264_MAX_PICTURE_COUNT 36
+ #define H264_MAX_THREADS       32
+ 
+diff --git a/ffmpeg/libavcodec/h264_picture.c b/ffmpeg/libavcodec/h264_picture.c
+index c4b17c0..cf71975 100644
+--- a/ffmpeg/libavcodec/h264_picture.c
++++ b/ffmpeg/libavcodec/h264_picture.c
+@@ -43,7 +43,7 @@
+ #include "rectangle.h"
+ #include "thread.h"
+ #include "vdpau_compat.h"
+-
++#include "libavutil/internal.h"
+ void ff_h264_unref_picture(H264Context *h, H264Picture *pic)
+ {
+     int off = offsetof(H264Picture, tf) + sizeof(pic->tf);
+diff --git a/ffmpeg/libavcodec/h264_sei.c b/ffmpeg/libavcodec/h264_sei.c
+index 77dd7b2..8fdc534 100644
+--- a/ffmpeg/libavcodec/h264_sei.c
++++ b/ffmpeg/libavcodec/h264_sei.c
+@@ -29,7 +29,9 @@
+ #include "golomb.h"
+ #include "h264.h"
+ #include "internal.h"
+-
++#include "libavutil/internal.h"
++#define EINVAL 22
++#define ENOMEM 12
+ static const uint8_t sei_num_clock_ts_table[9] = {
+     1, 1, 1, 2, 2, 3, 3, 2, 3
+ };
+diff --git a/ffmpeg/libavcodec/h264_slice.c b/ffmpeg/libavcodec/h264_slice.c
+index 0afd49b..3e1b067 100644
+--- a/ffmpeg/libavcodec/h264_slice.c
++++ b/ffmpeg/libavcodec/h264_slice.c
+@@ -43,7 +43,7 @@
+ #include "rectangle.h"
+ #include "thread.h"
+ 
+-
++#define ENOMEM 12
+ static const uint8_t rem6[QP_MAX_NUM + 1] = {
+     0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2,
+     3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5,
+@@ -658,7 +658,7 @@ static int h264_frame_start(H264Context *h)
+ 
+     h->next_output_pic = NULL;
+ 
+-    assert(h->cur_pic_ptr->long_ref == 0);
++    av_assert0(h->cur_pic_ptr->long_ref == 0);
+ 
+     return 0;
+ }
+@@ -1518,7 +1518,7 @@ int ff_h264_decode_slice_header(H264Context *h, H264SliceContext *sl)
+         if (h->first_field) {
+             av_assert0(h->cur_pic_ptr);
+             av_assert0(h->cur_pic_ptr->f->buf[0]);
+-            assert(h->cur_pic_ptr->reference != DELAYED_PIC_REF);
++            av_assert0(h->cur_pic_ptr->reference != DELAYED_PIC_REF);
+ 
+             /* Mark old field/frame as completed */
+             if (h->cur_pic_ptr->tf.owner == h->avctx) {
+@@ -1624,7 +1624,7 @@ int ff_h264_decode_slice_header(H264Context *h, H264SliceContext *sl)
+         if (h->first_field) {
+             av_assert0(h->cur_pic_ptr);
+             av_assert0(h->cur_pic_ptr->f->buf[0]);
+-            assert(h->cur_pic_ptr->reference != DELAYED_PIC_REF);
++            av_assert0(h->cur_pic_ptr->reference != DELAYED_PIC_REF);
+ 
+             /* figure out if we have a complementary field pair */
+             if (!FIELD_PICTURE(h) || h->picture_structure == last_pic_structure) {
+@@ -2415,12 +2415,12 @@ static int decode_slice(struct AVCodecContext *avctx, void *arg)
+                 return 0;
+             }
+             if (sl->cabac.bytestream > sl->cabac.bytestream_end + 2 )
+-                av_log(h->avctx, AV_LOG_DEBUG, "bytestream overread %"PTRDIFF_SPECIFIER"\n", sl->cabac.bytestream_end - sl->cabac.bytestream);
++                //av_log(h->avctx, AV_LOG_DEBUG, "bytestream overread %"PTRDIFF_SPECIFIER"\n", sl->cabac.bytestream_end - sl->cabac.bytestream);
+             if (ret < 0 || sl->cabac.bytestream > sl->cabac.bytestream_end + 4) {
+-                av_log(h->avctx, AV_LOG_ERROR,
+-                       "error while decoding MB %d %d, bytestream %"PTRDIFF_SPECIFIER"\n",
+-                       sl->mb_x, sl->mb_y,
+-                       sl->cabac.bytestream_end - sl->cabac.bytestream);
++               // av_log(h->avctx, AV_LOG_ERROR,
++                      // "error while decoding MB %d %d, bytestream %"PTRDIFF_SPECIFIER"\n",
++                      // sl->mb_x, sl->mb_y,
++                      // sl->cabac.bytestream_end - sl->cabac.bytestream);
+                 er_add_slice(sl, sl->resync_mb_x, sl->resync_mb_y, sl->mb_x,
+                              sl->mb_y, ER_MB_ERROR);
+                 return AVERROR_INVALIDDATA;
+diff --git a/ffmpeg/libavcodec/me_cmp.c b/ffmpeg/libavcodec/me_cmp.c
+index 4234000..dc76b07 100644
+--- a/ffmpeg/libavcodec/me_cmp.c
++++ b/ffmpeg/libavcodec/me_cmp.c
+@@ -555,7 +555,7 @@ static int dct_sad8x8_c(MpegEncContext *s, uint8_t *src1,
+ 
+     av_assert2(h == 8);
+ 
+-    s->pdsp.diff_pixels_unaligned(temp, src1, src2, stride);
++    s->pdsp.diff_pixels(temp, src1, src2, stride);
+     s->fdsp.fdct(temp);
+     return s->mecc.sum_abs_dctelem(temp);
+ }
+@@ -595,7 +595,7 @@ static int dct264_sad8x8_c(MpegEncContext *s, uint8_t *src1,
+     int16_t dct[8][8];
+     int i, sum = 0;
+ 
+-    s->pdsp.diff_pixels_unaligned(dct[0], src1, src2, stride);
++    s->pdsp.diff_pixels(dct[0], src1, src2, stride);
+ 
+ #define SRC(x) dct[i][x]
+ #define DST(x, v) dct[i][x] = v
+@@ -622,7 +622,7 @@ static int dct_max8x8_c(MpegEncContext *s, uint8_t *src1,
+ 
+     av_assert2(h == 8);
+ 
+-    s->pdsp.diff_pixels_unaligned(temp, src1, src2, stride);
++    s->pdsp.diff_pixels(temp, src1, src2, stride);
+     s->fdsp.fdct(temp);
+ 
+     for (i = 0; i < 64; i++)
+@@ -641,7 +641,7 @@ static int quant_psnr8x8_c(MpegEncContext *s, uint8_t *src1,
+     av_assert2(h == 8);
+     s->mb_intra = 0;
+ 
+-    s->pdsp.diff_pixels_unaligned(temp, src1, src2, stride);
++    s->pdsp.diff_pixels(temp, src1, src2, stride);
+ 
+     memcpy(bak, temp, 64 * sizeof(int16_t));
+ 
+@@ -744,7 +744,7 @@ static int bit8x8_c(MpegEncContext *s, uint8_t *src1, uint8_t *src2,
+ 
+     av_assert2(h == 8);
+ 
+-    s->pdsp.diff_pixels_unaligned(temp, src1, src2, stride);
++    s->pdsp.diff_pixels(temp, src1, src2, stride);
+ 
+     s->block_last_index[0 /* FIXME */] =
+     last                               =
+diff --git a/ffmpeg/libavcodec/pixblockdsp.h b/ffmpeg/libavcodec/pixblockdsp.h
+index b14514d..2c1f9ad 100644
+--- a/ffmpeg/libavcodec/pixblockdsp.h
++++ b/ffmpeg/libavcodec/pixblockdsp.h
+@@ -31,10 +31,10 @@ typedef struct PixblockDSPContext {
+                         const uint8_t *s1 /* align 8 */,
+                         const uint8_t *s2 /* align 8 */,
+                         int stride);
+-    void (*diff_pixels_unaligned)(int16_t *av_restrict block /* align 16 */,
+-                        const uint8_t *s1,
+-                        const uint8_t *s2,
+-                        int stride);
++   // void (*diff_pixels_unaligned)(int16_t *av_restrict block /* align 16 */,
++                  //      const uint8_t *s1,
++                    //    const uint8_t *s2,
++                    //    int stride);
+ 
+ } PixblockDSPContext;
+ 
+diff --git a/ffmpeg/libavcodec/utils.c b/ffmpeg/libavcodec/utils.c
+index cfdfab7..c7f77c9 100644
+--- a/ffmpeg/libavcodec/utils.c
++++ b/ffmpeg/libavcodec/utils.c
+@@ -59,7 +59,11 @@
+ #if CONFIG_ICONV
+ # include <iconv.h>
+ #endif
+-
++#define EINVAL 22
++#define ENOMEM 12
++#define EAGAIN 11
++#define ENOSYS 38
++#define ENOENT 2
+ #include "libavutil/ffversion.h"
+ const char av_codec_ffversion[] = "FFmpeg version " FFMPEG_VERSION;
+ 
